@@ -36,11 +36,22 @@ func main() {
 	router.DELETE("/user/:userId", handlerMongo.DeleteUser)
 
 	router.POST("/project/:userId", handlerMongo.CreateProject)
-	router.GET("/project/:userId", handlerMongo.GetProject)
 	router.GET("/projects/", handlerMongo.GetAllProjects)
+
+	router.GET("/projects/:userId", handlerMongo.GetProjectsByUser)
+	router.GET("/project/:userId/:projectId", handlerMongo.GetProject)
+
 	router.DELETE("/project/:id", handlerMongo.DeleteProject)
 	router.DELETE("/user/:userId/projects", handlerMongo.DeleteProjects)
 	router.PATCH("/project/:projectId", handlerMongo.UpdateProject)
+
+	router.GET("/tasks/", handlerMongo.GetAlltasks)
+	router.GET("/tasks/:projectId", handlerMongo.GetTasksByProject)
+	router.GET("/task/:projectId/:taskId", handlerMongo.GetTask)
+	router.POST("/task/:projectId", handlerMongo.CreateTask)
+	router.DELETE("/task/:projectId/:taskId", handlerMongo.DeleteTask)
+	router.DELETE("/tasks/:projectId", handlerMongo.DeleteTasks)
+	router.PUT("/projects/:projectId/task/:taskId", handlerMongo.UpdateTask)
 
 	srv := &http.Server{
 		Addr:    ":8080",
@@ -73,32 +84,3 @@ func main() {
 
 	log.Println("Server exiting")
 }
-
-// 6666df7fe46ca0eec261ce5d
-
-// "667046cad72cfdacf52c6bf3",
-// "667046d2d72cfdacf52c6bf4",
-//
-// "name": "New Project",
-// "description": "Description of the new project",
-// "priority": 5,
-// "author": "Author Name",
-// "responsible": "Responsible Person",
-// "performers": "Performer1, Performer2",
-// "deadline": "2024-12-31T23:59:59Z",
-// "guests": "Guest1, Guest2",
-// "status": "open"
-//
-//
-//    "projectIDs": [
-// 	"60b8d6e4f1a2c3b9d567e98a",
-// 	"60b8d6e4f1a2c3b9d567e98b",
-// 	"60b8d6e4f1a2c3b9d567e98c"
-// ]
-//
-//
-//
-//
-//
-//
-//

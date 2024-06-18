@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 	"tmv/project"
 	"tmv/user"
@@ -67,7 +68,6 @@ func (m *MongoStorage) GetAllUsers() map[primitive.ObjectID]user.User {
 
 	return users
 }
-
 func (m *MongoStorage) GetUser(userId primitive.ObjectID) (user.User, error) {
 	var usr user.User
 
@@ -82,14 +82,12 @@ func (m *MongoStorage) GetUser(userId primitive.ObjectID) (user.User, error) {
 
 	return usr, nil
 }
-
 func (m *MongoStorage) InsertUser(u *user.User) error {
 	u.Id = primitive.NewObjectID()
 
 	_, err := m.UserCollection.InsertOne(context.TODO(), u)
 	return err
 }
-
 func (m *MongoStorage) UpdateUser(userId primitive.ObjectID, e *user.User) error {
 	filter := bson.D{{Key: "_id", Value: userId}}
 	update := bson.D{{Key: "$set", Value: e}}
@@ -97,7 +95,6 @@ func (m *MongoStorage) UpdateUser(userId primitive.ObjectID, e *user.User) error
 	_, err := m.UserCollection.UpdateOne(context.TODO(), filter, update)
 	return err
 }
-
 func (m *MongoStorage) DeleteUser(userId primitive.ObjectID) error {
 	filter := bson.D{{Key: "_id", Value: userId}}
 
@@ -124,17 +121,20 @@ func (m *MongoStorage) GetAllProjects() map[primitive.ObjectID]project.Project {
 	}
 	return projects
 }
-
-func (m *MongoStorage) GetProject(userId primitive.ObjectID) ([]project.Project, error) {
+func (m *MongoStorage) GetProjectByUser(userId primitive.ObjectID) ([]project.Project, error) {
 	var projects []project.Project
+
+	// Создаем фильтр для поиска проектов по userId
 	filter := bson.D{{Key: "userId", Value: userId}}
 
+	// Выполняем запрос к коллекции проектов
 	cursor, err := m.ProjectCollection.Find(context.TODO(), filter)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(context.TODO())
 
+	// Обрабатываем результаты запроса
 	for cursor.Next(context.TODO()) {
 		var proj project.Project
 		if err := cursor.Decode(&proj); err != nil {
@@ -143,65 +143,34 @@ func (m *MongoStorage) GetProject(userId primitive.ObjectID) ([]project.Project,
 		projects = append(projects, proj)
 	}
 
+	// Проверяем наличие ошибок при работе с курсором
 	if err := cursor.Err(); err != nil {
 		return nil, err
 	}
 
+	// Возвращаем результаты
 	return projects, nil
 }
-func (m *MongoStorage) InsertProject(p *project.Project, userID primitive.ObjectID) error {
-	// Генерируем новый ObjectID для проекта
-	p.Id = primitive.NewObjectID()
-	// Присваиваем ObjectID пользователя проекту
-	p.UserID = userID
+func (m *MongoStorage) GetProject(userId, projectId primitive.ObjectID) (*project.Project, error) {
+	var proj project.Project
 
-	// Вставляем документ проекта в коллекцию проектов (ProjectCollection)
-	_, err := m.ProjectCollection.InsertOne(context.TODO(), p)
-	if err != nil {
-		return err
+	// Создаем фильтр для поиска проекта по userId и projectId
+	filter := bson.D{
+		{Key: "_id", Value: projectId},
+		{Key: "userId", Value: userId},
 	}
 
-	// Обновляем документ пользователя в коллекции пользователей (UserCollection),
-	// чтобы добавить ID проекта в массив projects
-	filter := bson.D{{Key: "_id", Value: userID}}
-
-	// Проверяем, существует ли поле projects
-	userUpdateResult := m.UserCollection.FindOne(context.TODO(), filter)
-
-	var userDoc map[string]interface{}
-	err = userUpdateResult.Decode(&userDoc)
+	// Выполняем запрос к коллекции проектов
+	err := m.ProjectCollection.FindOne(context.TODO(), filter).Decode(&proj)
 	if err != nil {
-		// Если пользователь не найден, возвращаем ошибку
-		return err
-	}
-
-	if _, ok := userDoc["projects"]; !ok {
-		// Если поле projects не существует, инициализируем его как пустой массив
-		_, err = m.UserCollection.UpdateOne(
-			context.TODO(),
-			filter,
-			bson.D{
-				{Key: "$set", Value: bson.D{{Key: "projects", Value: []primitive.ObjectID{}}}},
-			},
-		)
-		if err != nil {
-			return err
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("проект не найден")
 		}
+		return nil, err
 	}
 
-	// Добавляем новый проект в массив projects
-	_, err = m.UserCollection.UpdateOne(
-		context.TODO(),
-		filter,
-		bson.D{
-			{Key: "$addToSet", Value: bson.D{{Key: "projects", Value: p.Id}}},
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	// Возвращаем найденный проект
+	return &proj, nil
 }
 func (m *MongoStorage) DeleteProject(id primitive.ObjectID) error {
 	// Найти проект по ID, чтобы получить userID
@@ -229,7 +198,6 @@ func (m *MongoStorage) DeleteProject(id primitive.ObjectID) error {
 	}
 
 	return nil
-
 }
 func (m *MongoStorage) DeleteProjects(userID primitive.ObjectID, projectIDs []primitive.ObjectID) error {
 	// Удалить проекты из коллекции проектов
@@ -254,32 +222,6 @@ func (m *MongoStorage) DeleteProjects(userID primitive.ObjectID, projectIDs []pr
 
 	return nil
 }
-
-// func (m *MongoStorage) GetProjectsByUser(userId primitive.ObjectID) ([]project.Project, error) {
-// 	var projects []project.Project
-// 	filter := bson.D{{Key: "userId", Value: userId}}
-
-// 	cursor, err := m.ProjectCollection.Find(context.TODO(), filter)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer cursor.Close(context.TODO())
-
-// 	for cursor.Next(context.TODO()) {
-// 		var proj project.Project
-// 		if err := cursor.Decode(&proj); err != nil {
-// 			return nil, err
-// 		}
-// 		projects = append(projects, proj)
-// 	}
-
-// 	if err := cursor.Err(); err != nil {
-// 		return nil, err
-// 	}
-
-// 	return projects, nil
-// }
-
 func (m *MongoStorage) UpdateProject(projectID primitive.ObjectID, updateFields bson.M) error {
 	filter := bson.D{{Key: "_id", Value: projectID}}
 	update := bson.D{{Key: "$set", Value: updateFields}}
@@ -287,7 +229,147 @@ func (m *MongoStorage) UpdateProject(projectID primitive.ObjectID, updateFields 
 	_, err := m.ProjectCollection.UpdateOne(context.TODO(), filter, update)
 	return err
 }
+func (m *MongoStorage) InsertProject(p *project.Project, userID primitive.ObjectID) error {
+	// Генерируем новый ObjectID для проекта
+	p.Id = primitive.NewObjectID()
+	// Присваиваем ObjectID пользователя проекту
+	p.UserID = userID
 
+	// Вставляем документ проекта в коллекцию проектов (ProjectCollection)
+	_, err := m.ProjectCollection.InsertOne(context.TODO(), p)
+	if err != nil {
+		return err
+	}
+
+	// Обновляем документ пользователя в коллекции пользователей (UserCollection),
+	// чтобы добавить ID проекта в массив projects
+	filter := bson.D{{Key: "_id", Value: userID}}
+
+	// Проверяем, существует ли поле projects
+	userUpdateResult := m.UserCollection.FindOne(context.TODO(), filter)
+
+	var userDoc map[string]interface{}
+	err = userUpdateResult.Decode(&userDoc)
+	if err != nil {
+		// Если пользователь не найден, возвращаем ошибку
+		return err
+	}
+	if _, ok := userDoc["projects"]; !ok {
+		// Если поле projects не существует, инициализируем его как пустой массив
+		_, err = m.UserCollection.UpdateOne(
+			context.TODO(),
+			filter,
+			bson.D{
+				{Key: "$set", Value: bson.D{{Key: "projects", Value: []primitive.ObjectID{}}}},
+			},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	// Добавляем новый проект в массив projects
+	_, err = m.UserCollection.UpdateOne(
+		context.TODO(),
+		filter,
+		bson.D{
+			{Key: "$addToSet", Value: bson.D{{Key: "projects", Value: p.Id}}},
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *MongoStorage) GetTasksByProject(projectId primitive.ObjectID) ([]project.Task, error) {
+	var tasks []project.Task
+	filter := bson.D{{Key: "projectId", Value: projectId}}
+
+	cursor, err := m.TaskCollection.Find(context.TODO(), filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.TODO())
+
+	for cursor.Next(context.TODO()) {
+		var task project.Task
+		if err := cursor.Decode(&task); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+func (m *MongoStorage) InsertTask(t *project.Task, projectId primitive.ObjectID) error {
+
+	t.ID = primitive.NewObjectID()
+	t.ProjectID = projectId
+
+	_, err := m.TaskCollection.InsertOne(context.TODO(), t)
+	if err != nil {
+		return err
+	}
+	filter := bson.D{{Key: "_id", Value: projectId}}
+
+	projectUpdateResult := m.ProjectCollection.FindOne(context.TODO(), filter)
+
+	var projectDoc map[string]interface{}
+	err = projectUpdateResult.Decode(&projectDoc)
+	if err != nil {
+		// Если пользователь не найден, возвращаем ошибку
+		return err
+	}
+	if _, ok := projectDoc["tasks"]; !ok || projectDoc["tasks"] == nil {
+		// Если поле tasks не существует, инициализируем его как пустой массив
+		_, err = m.ProjectCollection.UpdateOne(
+			context.TODO(),
+			filter,
+			bson.D{
+				{Key: "$set", Value: bson.D{{Key: "tasks", Value: []primitive.ObjectID{}}}},
+			},
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Добавляем новый проект в массив tasks
+	_, err = m.ProjectCollection.UpdateOne(
+		context.TODO(),
+		filter,
+		bson.D{
+			{Key: "$addToSet", Value: bson.D{{Key: "tasks", Value: t.ID}}},
+		},
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (m *MongoStorage) GetTask(projectId, taskId primitive.ObjectID) (*project.Task, error) {
+	// Фильтр для поиска задачи по taskId и projectId
+	filter := bson.D{
+		{Key: "_id", Value: taskId},
+		{Key: "projectId", Value: projectId},
+	}
+
+	var task project.Task
+	err := m.TaskCollection.FindOne(context.TODO(), filter).Decode(&task)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &task, nil
+}
 func (m *MongoStorage) GetAllTasks() map[primitive.ObjectID]project.Task {
 	tasks := make(map[primitive.ObjectID]project.Task)
 
@@ -307,75 +389,61 @@ func (m *MongoStorage) GetAllTasks() map[primitive.ObjectID]project.Task {
 	}
 	return tasks
 }
+func (m *MongoStorage) DeleteTask(projectId, taskId primitive.ObjectID) error {
+	filter := bson.D{
+		{Key: "_id", Value: taskId},
+		{Key: "projectId", Value: projectId},
+	}
 
-func (m *MongoStorage) GetTask(taskId primitive.ObjectID) ([]project.Task, error) {
-	var tasks []project.Task
-	filter := bson.D{{Key: "_id", Value: taskId}}
-
-	cursor, err := m.TaskCollection.Find(context.TODO(), filter)
+	// Удаление задачи из коллекции задач
+	_, err := m.TaskCollection.DeleteOne(context.TODO(), filter)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer cursor.Close(context.TODO())
+	// Фильтр для обновления проекта
+	projectFilter := bson.D{{Key: "_id", Value: projectId}}
+	update := bson.D{{Key: "$pull", Value: bson.D{{Key: "tasks", Value: taskId}}}}
 
-	for cursor.Next(context.TODO()) {
-		var task project.Task
-		if err := cursor.Decode(&task); err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, task)
-	}
-
-	if err := cursor.Err(); err != nil {
-		return nil, err
-	}
-
-	return tasks, nil
-}
-
-func (m *MongoStorage) GetTasksByProject(id primitive.ObjectID) ([]project.Task, error) {
-	var tasks []project.Task
-	filter := bson.D{{Key: "_id", Value: id}}
-
-	cursor, err := m.TaskCollection.Find(context.TODO(), filter)
+	// Удаление ID задачи из массива tasks в проекте
+	_, err = m.ProjectCollection.UpdateOne(context.TODO(), projectFilter, update)
 	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(context.TODO())
-
-	for cursor.Next(context.TODO()) {
-		var task project.Task
-		if err := cursor.Decode(&task); err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, task)
+		return err
 	}
 
-	if err := cursor.Err(); err != nil {
-		return nil, err
-	}
-
-	return tasks, nil
+	return nil
 }
+func (m *MongoStorage) DeleteTasks(projectId primitive.ObjectID, taskIds []primitive.ObjectID) error {
+	// Фильтр для удаления задач по projectId и массиву taskIds
+	filter := bson.D{
+		{Key: "projectId", Value: projectId},
+		{Key: "_id", Value: bson.D{{Key: "$in", Value: taskIds}}},
+	}
 
-func (m *MongoStorage) InsertTask(t *project.Task) error {
-	t.ID = primitive.NewObjectID()
+	// Удаление задач из коллекции задач
+	_, err := m.TaskCollection.DeleteMany(context.TODO(), filter)
+	if err != nil {
+		return err
+	}
 
-	_, err := m.TaskCollection.InsertOne(context.TODO(), t)
-	return err
+	// Фильтр для обновления проекта
+	projectFilter := bson.D{{Key: "_id", Value: projectId}}
+	update := bson.D{{Key: "$pull", Value: bson.D{{Key: "tasks", Value: bson.D{{Key: "$in", Value: taskIds}}}}}}
+
+	// Удаление ID задач из массива tasks в проекте
+	_, err = m.ProjectCollection.UpdateOne(context.TODO(), projectFilter, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
-
-func (m *MongoStorage) UpdateTask(taskId primitive.ObjectID, t *project.Task) error {
-	filter := bson.D{{Key: "_id", Value: taskId}}
-	update := bson.D{{Key: "$set", Value: t}}
+func (m *MongoStorage) UpdateTask(projectId, taskId primitive.ObjectID, updateFields bson.M) error {
+	filter := bson.D{
+		{Key: "_id", Value: taskId},
+		{Key: "projectId", Value: projectId},
+	}
+	update := bson.D{{Key: "$set", Value: updateFields}}
 
 	_, err := m.TaskCollection.UpdateOne(context.TODO(), filter, update)
-	return err
-}
-
-func (m *MongoStorage) DeleteTask(taskId primitive.ObjectID) error {
-	filter := bson.D{{Key: "_id", Value: taskId}}
-
-	_, err := m.TaskCollection.DeleteOne(context.TODO(), filter)
 	return err
 }

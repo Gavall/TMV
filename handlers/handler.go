@@ -162,31 +162,54 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	h.Storage.DeleteUser(userId)
 	c.String(http.StatusOK, "user deleted")
 }
-
-func (h *Handler) GetProject(c *gin.Context) {
-	userId := c.Param("userId")
-
-	// Проверяем, является ли userId корректным ObjectID
-	objID, err := primitive.ObjectIDFromHex(userId)
+func (h *Handler) GetProjectsByUser(c *gin.Context) {
+	// Получаем userId из параметров запроса
+	userIdHex := c.Param("userId")
+	userId, err := primitive.ObjectIDFromHex(userIdHex)
 	if err != nil {
-		fmt.Printf("failed to convert params userId to ObjectID: %s\n", err.Error())
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Message: "invalid userId format",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid userId format"})
 		return
 	}
 
-	// Вызываем метод для получения проекта
-	projects, err := h.Storage.GetProject(objID)
+	// Получаем проекты пользователя
+	projects, err := h.Storage.GetProjectByUser(userId)
 	if err != nil {
-		fmt.Printf("failed to get project: %s\n", err.Error())
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Message: err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
+	// Возвращаем список проектов
 	c.JSON(http.StatusOK, projects)
+}
+func (h *Handler) GetProject(c *gin.Context) {
+	// Получаем userId и projectId из параметров запроса
+	userIdHex := c.Param("userId")
+	userId, err := primitive.ObjectIDFromHex(userIdHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid userId format"})
+		return
+	}
+
+	projectIdHex := c.Param("projectId")
+	projectId, err := primitive.ObjectIDFromHex(projectIdHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	// Получаем проект
+	project, err := h.Storage.GetProject(userId, projectId)
+	if err != nil {
+		if err.Error() == "проект не найден" {
+			c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		}
+		return
+	}
+
+	// Возвращаем проект
+	c.JSON(http.StatusOK, project)
 }
 func (h *Handler) GetAllProjects(c *gin.Context) {
 	storage := h.Storage.GetAllProjects()
@@ -275,4 +298,179 @@ func (h *Handler) DeleteProjects(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "projects deleted successfully"})
+}
+
+func (h *Handler) GetAlltasks(c *gin.Context) {
+	storage := h.Storage.GetAllTasks()
+	c.JSON(http.StatusOK, storage)
+}
+func (h *Handler) GetTasksByProject(c *gin.Context) {
+	projectIdParam := c.Param("projectId")
+	projectId, err := primitive.ObjectIDFromHex(projectIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	tasks, err := h.Storage.GetTasksByProject(projectId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, tasks)
+}
+func (h *Handler) CreateTask(c *gin.Context) {
+	var task project.Task
+
+	if err := c.BindJSON(&task); err != nil {
+		fmt.Printf("failed to bind project: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+		return
+	}
+
+	projectIDStr := c.Param("projectId")
+	projectID, err := primitive.ObjectIDFromHex(projectIDStr)
+	if err != nil {
+		fmt.Printf("failed to convert userId to ObjectID: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: "invalid userId format",
+		})
+		return
+	}
+
+	err = h.Storage.InsertTask(&task, projectID)
+	if err != nil {
+		fmt.Printf("failed to insert project: %s\n", err.Error())
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"taskId":    task.ID,
+		"projectId": projectID.Hex(),
+	})
+}
+func (h *Handler) GetTask(c *gin.Context) {
+	projectIdParam := c.Param("projectId")
+	taskIdParam := c.Param("taskId")
+
+	projectId, err := primitive.ObjectIDFromHex(projectIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	taskId, err := primitive.ObjectIDFromHex(taskIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid taskId format"})
+		return
+	}
+
+	task, err := h.Storage.GetTask(projectId, taskId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if task == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+func (h *Handler) DeleteTask(c *gin.Context) {
+	projectIdParam := c.Param("projectId")
+	taskIdParam := c.Param("taskId")
+
+	projectId, err := primitive.ObjectIDFromHex(projectIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	taskId, err := primitive.ObjectIDFromHex(taskIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid taskId format"})
+		return
+	}
+
+	err = h.Storage.DeleteTask(projectId, taskId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "task deleted successfully"})
+}
+func (h *Handler) DeleteTasks(c *gin.Context) {
+	projectIdParam := c.Param("projectId")
+
+	// Проверка правильности формата projectId
+	projectId, err := primitive.ObjectIDFromHex(projectIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	var taskIds []string
+	if err := c.ShouldBindJSON(&taskIds); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid taskIds format"})
+		return
+	}
+
+	// Преобразование taskIds в []primitive.ObjectID
+	var objectIDs []primitive.ObjectID
+	for _, id := range taskIds {
+		objectID, err := primitive.ObjectIDFromHex(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "invalid taskId format"})
+			return
+		}
+		objectIDs = append(objectIDs, objectID)
+	}
+
+	// Вызов метода DeleteTasks для удаления задач
+	err = h.Storage.DeleteTasks(projectId, objectIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "tasks deleted successfully"})
+}
+func (h *Handler) UpdateTask(c *gin.Context) {
+	projectIdParam := c.Param("projectId")
+	taskIdParam := c.Param("taskId")
+
+	projectId, err := primitive.ObjectIDFromHex(projectIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	taskId, err := primitive.ObjectIDFromHex(taskIdParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid taskId format"})
+		return
+	}
+
+	var updateFields map[string]interface{}
+	if err := c.ShouldBindJSON(&updateFields); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid task format"})
+		return
+	}
+
+	err = h.Storage.UpdateTask(projectId, taskId, updateFields)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "task updated successfully"})
 }

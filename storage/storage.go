@@ -16,17 +16,18 @@ type Storage interface {
 	DeleteUser(userId primitive.ObjectID) error
 
 	GetAllProjects() map[primitive.ObjectID]project.Project
-	GetProject(userId primitive.ObjectID) ([]project.Project, error)
+	GetProject(userId, projectId primitive.ObjectID) (*project.Project, error)
+	GetProjectByUser(userId primitive.ObjectID) ([]project.Project, error)
 	InsertProject(p *project.Project, userId primitive.ObjectID) error
 	UpdateProject(projectID primitive.ObjectID, updateFields bson.M) error
-
 	DeleteProject(projectId primitive.ObjectID) error
 	DeleteProjects(userID primitive.ObjectID, projectIDs []primitive.ObjectID) error
 
 	GetAllTasks() map[primitive.ObjectID]project.Task
-	GetTask(taskId primitive.ObjectID) ([]project.Task, error)
+	InsertTask(t *project.Task, projectId primitive.ObjectID) error
 	GetTasksByProject(projectId primitive.ObjectID) ([]project.Task, error)
-	InsertTask(t *project.Task) error
-	UpdateTask(taskId primitive.ObjectID, t *project.Task) error
-	DeleteTask(taskId primitive.ObjectID) error
+	GetTask(projectId, taskId primitive.ObjectID) (*project.Task, error)
+	DeleteTasks(projectId primitive.ObjectID, taskIds []primitive.ObjectID) error
+	UpdateTask(projectId, taskId primitive.ObjectID, updateFields bson.M) error
+	DeleteTask(projectId, taskId primitive.ObjectID) error
 }
