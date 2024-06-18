@@ -3,11 +3,12 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"strconv"
-	"tmv/employee"
+	"tmv/project"
 	"tmv/storage"
+	"tmv/user"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type ErrorResponse struct {
@@ -21,112 +22,257 @@ func NewHandler(st storage.Storage) *Handler {
 	return &Handler{Storage: st}
 }
 
-func (h *Handler) CreateEmployee(c *gin.Context) {
-	var employee employee.Employee
+func (h *Handler) CreateUser(c *gin.Context) {
+	var newUser user.User
 
-	if err := c.BindJSON(&employee); err != nil {
-		fmt.Printf("failer to bind employee: %s\n", err.Error())
+	if err := c.BindJSON(&newUser); err != nil {
+		fmt.Printf("failer to bind user: %s\n", err.Error())
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Message: err.Error(),
 		})
 		return
 	}
 
-	h.Storage.Insert(&employee)
+	h.Storage.InsertUser(&newUser)
 
 	c.JSON(http.StatusOK, map[string]interface{}{
-		"id": employee.Id,
+		"userId": newUser.Id.Hex(),
 	})
 }
 
-func (h *Handler) UpdateEmployee(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+func (h *Handler) CreateProject(c *gin.Context) {
+	var proj project.Project
+
+	if err := c.BindJSON(&proj); err != nil {
+		fmt.Printf("failed to bind project: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+		return
+	}
+
+	userIDStr := c.Param("userId")
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
 	if err != nil {
-		fmt.Printf("failed to convert params id to int: %s\n", err.Error())
+		fmt.Printf("failed to convert userId to ObjectID: %s\n", err.Error())
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Message: err.Error(),
+			Message: "invalid userId format",
 		})
 		return
 	}
 
-	// Получение существующего сотрудника из хранилища
-	existingEmployee, err := h.Storage.Get(id)
+	err = h.Storage.InsertProject(&proj, userID)
 	if err != nil {
-		fmt.Printf("failed to get employee: %s\n", err.Error())
-		c.JSON(http.StatusBadRequest, ErrorResponse{
+		fmt.Printf("failed to insert project: %s\n", err.Error())
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Message: err.Error(),
 		})
 		return
 	}
-
-	// Чтение новых данных сотрудника из тела запроса
-	var newEmployee employee.Employee
-	if err := c.BindJSON(&newEmployee); err != nil {
-		fmt.Printf("failed to bind employee: %s\n", err.Error())
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Message: err.Error(),
-		})
-		return
-	}
-
-	// Обновление полей сотрудника только для тех, которые были переданы в теле запроса
-	if newEmployee.Name != "" {
-		existingEmployee.Name = newEmployee.Name
-	}
-	if newEmployee.Work != "" {
-		existingEmployee.Work = newEmployee.Work
-	}
-	if newEmployee.Age != 0 {
-		existingEmployee.Age = newEmployee.Age
-	}
-	if newEmployee.Salary != 0 {
-		existingEmployee.Salary = newEmployee.Salary
-	}
-	// Добавьте дополнительные условия для других полей, если необходимо
-
-	// Обновление сотрудника в хранилище
-	h.Storage.Update(id, &existingEmployee)
 
 	c.JSON(http.StatusOK, map[string]interface{}{
-		"id": existingEmployee.Id,
+		"projectId": proj.Id,
+		"userId":    userID.Hex(),
 	})
 }
-func (h *Handler) GetAllEmployees(c *gin.Context) {
-	storage := h.Storage.GetAll()
+func (h *Handler) UpdateUser(c *gin.Context) {
+	userId, err := primitive.ObjectIDFromHex(c.Param("userId"))
+	if err != nil {
+		fmt.Printf("failed to convert params userId to ObjectID: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+		return
+	}
+
+	existingUser, err := h.Storage.GetUser(userId)
+	if err != nil {
+		fmt.Printf("failed to get user: %s\n", err.Error())
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Message: err.Error(),
+		})
+		return
+	}
+
+	var newUser user.User
+	if err := c.BindJSON(&newUser); err != nil {
+		fmt.Printf("failed to bind user: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+		return
+	}
+
+	if newUser.Name != "" {
+		existingUser.Name = newUser.Name
+	}
+	if newUser.Work != "" {
+		existingUser.Work = newUser.Work
+	}
+	if newUser.Age != 0 {
+		existingUser.Age = newUser.Age
+	}
+	if newUser.Salary != 0 {
+		existingUser.Salary = newUser.Salary
+	}
+	if newUser.Email != "" {
+		existingUser.Email = newUser.Email
+	}
+
+	h.Storage.UpdateUser(userId, &existingUser)
+
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"userId": existingUser.Id.Hex(),
+	})
+}
+func (h *Handler) GetAllUsers(c *gin.Context) {
+	storage := h.Storage.GetAllUsers()
 	c.JSON(http.StatusOK, storage)
 }
-func (h *Handler) GetEmployee(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+func (h *Handler) GetUser(c *gin.Context) {
+	userId, err := primitive.ObjectIDFromHex(c.Param("userId"))
 	if err != nil {
-		fmt.Printf("failer convert params id in int: %s\n", err.Error())
+		fmt.Printf("failer convert params userId to ObjectID: %s\n", err.Error())
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Message: err.Error(),
 		})
 		return
 	}
 
-	employee, err := h.Storage.Get(id)
+	user, err := h.Storage.GetUser(userId)
 	if err != nil {
-		fmt.Printf("failed to get employee %s\n ", err.Error())
-		c.JSON(http.StatusBadRequest, ErrorResponse{
+		fmt.Printf("failed to get user %s\n", err.Error())
+		c.JSON(http.StatusNotFound, ErrorResponse{
 			Message: err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, employee)
+	c.JSON(http.StatusOK, user)
+}
+func (h *Handler) DeleteUser(c *gin.Context) {
+	userId, err := primitive.ObjectIDFromHex(c.Param("userId"))
+	if err != nil {
+		fmt.Printf("failed to convert userId param to ObjectID: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+	}
+
+	h.Storage.DeleteUser(userId)
+	c.String(http.StatusOK, "user deleted")
 }
 
-func (h *Handler) DeleteEmployee(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+func (h *Handler) GetProject(c *gin.Context) {
+	userId := c.Param("userId")
+
+	// Проверяем, является ли userId корректным ObjectID
+	objID, err := primitive.ObjectIDFromHex(userId)
 	if err != nil {
-		fmt.Printf("failed to convert id param to int: %s\n", err.Error())
+		fmt.Printf("failed to convert params userId to ObjectID: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: "invalid userId format",
+		})
+		return
+	}
+
+	// Вызываем метод для получения проекта
+	projects, err := h.Storage.GetProject(objID)
+	if err != nil {
+		fmt.Printf("failed to get project: %s\n", err.Error())
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Message: err.Error(),
 		})
 		return
 	}
 
-	h.Storage.Delete(id)
-	c.String(http.StatusOK, "employee deleted")
+	c.JSON(http.StatusOK, projects)
+}
+func (h *Handler) GetAllProjects(c *gin.Context) {
+	storage := h.Storage.GetAllProjects()
+	c.JSON(http.StatusOK, storage)
+}
+func (h *Handler) UpdateProject(c *gin.Context) {
+	projectID := c.Param("projectId")
+	if projectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId"})
+		return
+	}
+
+	// Преобразуем строку projectID в ObjectID
+	projectObjectID, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectId format"})
+		return
+	}
+
+	var updateFields map[string]interface{}
+	if err := c.BindJSON(&updateFields); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		return
+	}
+
+	err = h.Storage.UpdateProject(projectObjectID, updateFields)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update project", "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "project updated successfully"})
+}
+
+func (h *Handler) DeleteProject(c *gin.Context) {
+	id, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		fmt.Printf("failed to convert id param to ProjectID: %s\n", err.Error())
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+	}
+
+	h.Storage.DeleteProject(id)
+	c.String(http.StatusOK, "project deleted")
+}
+func (h *Handler) DeleteProjects(c *gin.Context) {
+	userID := c.Param("userId")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid userId"})
+		return
+	}
+
+	// Преобразуем строку userID в ObjectID
+	userObjectID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid userId format"})
+		return
+	}
+
+	var requestBody struct {
+		ProjectIDs []string `json:"projectIDs"`
+	}
+
+	if err := c.BindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		return
+	}
+
+	// Преобразуем строковые идентификаторы проектов в ObjectID
+	projectObjectIDs := make([]primitive.ObjectID, len(requestBody.ProjectIDs))
+	for i, projectID := range requestBody.ProjectIDs {
+		projectObjectID, err := primitive.ObjectIDFromHex(projectID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "invalid projectID format"})
+			return
+		}
+		projectObjectIDs[i] = projectObjectID
+	}
+
+	// Вызовем метод для удаления проектов
+	err = h.Storage.DeleteProjects(userObjectID, projectObjectIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to delete projects", "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "projects deleted successfully"})
 }

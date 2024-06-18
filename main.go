@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	mongoStorage, err := storage.NewMongoStorage("mongodb://localhost:27017", "mydatabase", "employees")
+	mongoStorage, err := storage.NewMongoStorage("mongodb://localhost:27017", "tmv", "users", "projects", "tasks")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,24 +27,23 @@ func main() {
 
 	router := gin.Default()
 
-	memoryStorage := storage.NewMemoryStorage()
-	handler2 := handlers.NewHandler(mongoStorage)
-	handler := handlers.NewHandler(memoryStorage)
+	handlerMongo := handlers.NewHandler(mongoStorage)
 
-	router.POST("/employee", handler.CreateEmployee)
-	router.GET("/employee/:id", handler.GetEmployee)
-	router.GET("/employee", handler.GetAllEmployees)
-	router.PUT("/employee/:id", handler.UpdateEmployee)
-	router.DELETE("/employee/:id", handler.DeleteEmployee)
+	router.POST("/user", handlerMongo.CreateUser)
+	router.GET("/user/:userId", handlerMongo.GetUser)
+	router.GET("/users", handlerMongo.GetAllUsers)
+	router.PUT("/user/:userId", handlerMongo.UpdateUser)
+	router.DELETE("/user/:userId", handlerMongo.DeleteUser)
 
-	router.POST("/remployee", handler2.CreateEmployee)
-	router.GET("/remployee/:id", handler2.GetEmployee)
-	router.GET("/remployee", handler2.GetAllEmployees)
-	router.PUT("/remployee/:id", handler2.UpdateEmployee)
-	router.DELETE("/remployee/:id", handler2.DeleteEmployee)
+	router.POST("/project/:userId", handlerMongo.CreateProject)
+	router.GET("/project/:userId", handlerMongo.GetProject)
+	router.GET("/projects/", handlerMongo.GetAllProjects)
+	router.DELETE("/project/:id", handlerMongo.DeleteProject)
+	router.DELETE("/user/:userId/projects", handlerMongo.DeleteProjects)
+	router.PATCH("/project/:projectId", handlerMongo.UpdateProject)
 
 	srv := &http.Server{
-		Addr:    ":8000",
+		Addr:    ":8080",
 		Handler: router,
 	}
 
@@ -58,7 +57,7 @@ func main() {
 			log.Fatalf("ListenAndServe(): %s", err)
 		}
 	}()
-	log.Println("Server is running on port 8000")
+	log.Println("Server is running on port 8080")
 
 	// Блокируемся до получения сигнала завершения
 	<-quit
@@ -74,3 +73,32 @@ func main() {
 
 	log.Println("Server exiting")
 }
+
+// 6666df7fe46ca0eec261ce5d
+
+// "667046cad72cfdacf52c6bf3",
+// "667046d2d72cfdacf52c6bf4",
+//
+// "name": "New Project",
+// "description": "Description of the new project",
+// "priority": 5,
+// "author": "Author Name",
+// "responsible": "Responsible Person",
+// "performers": "Performer1, Performer2",
+// "deadline": "2024-12-31T23:59:59Z",
+// "guests": "Guest1, Guest2",
+// "status": "open"
+//
+//
+//    "projectIDs": [
+// 	"60b8d6e4f1a2c3b9d567e98a",
+// 	"60b8d6e4f1a2c3b9d567e98b",
+// 	"60b8d6e4f1a2c3b9d567e98c"
+// ]
+//
+//
+//
+//
+//
+//
+//
